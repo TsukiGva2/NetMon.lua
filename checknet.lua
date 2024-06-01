@@ -10,7 +10,7 @@ end
 local Debug = {}
 setmetatable(Debug, {__index=ignore_index})
 if os.getenv("CHECKNET_DEBUG") then
-	Debug = {dbg = require("include/debugger/debugger")}
+	Debug = {dbg = require("debugger/debugger")}
 	setmetatable(Debug, {__index=Debug.dbg})
 end
 -- end debug stuff

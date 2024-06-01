@@ -1,0 +1,3 @@
+[submodule "debugger"]
+	path = debugger
+	url = https://github.com/slembcke/debugger.lua
