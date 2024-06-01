@@ -3,13 +3,13 @@ local directories = require(".directories")
 Netlog = {}
 
 --@Netlog
-function Netlog:create()
+function Netlog:create(path)
 	local nl = {}
 	setmetatable(nl, {
 		__index = self
 	})
 
-	self.path = directories.MyTempo_py_dir .. "netlog"
+	self.path = path or "netlog"
 	self.handle = nil
 
 	self.flush = false
