@@ -1,10 +1,11 @@
-package = "luanet"
+package = "netmon"
 version = "dev-1"
 source = {
-   url = "git+https://github.com/mytempoesp/mytempo-api-linux"
+   url = "git+https://github.com/TsukiGva2/NetMon.lua"
+   license = "MIT"
 }
 description = {
-   homepage = "https://github.com/mytempoesp/mytempo-api-linux",
+   homepage = "https://github.com/TsukiGva2/NetMon.lua",
 }
 build = {
    type = "builtin",
@@ -23,7 +24,7 @@ build = {
    },
    install = {
 	bin = {
-		["checknet"] = "checknet.lua"
+		["netmon"] = "checknet.lua"
 	}
    }
 }
