@@ -7,10 +7,12 @@ local GLib = lgi.require("GLib")
 
 local Netlog = require("netlog")
 
---[[ workaround
+-- needed for AF_INET (why doesn't NetworkManager define this?)
 local socket = require("socket")
+
+--[[ workaround
 function sleep(sec)
-	socket.select(nil, nil, sec)
+socket.select(nil, nil, sec)
 end
 ]]--
 
@@ -72,8 +74,30 @@ function Netmon:_create_conn(name, devtype, network_name, password)
 
 	self._tmp_conn:add_setting(setting_conn)
 
-	if devtype == "wired" then
+	if devtype == "wired" or devtype == "ethernet" then
 		self._tmp_conn:add_setting(NetworkManager.SettingWired.new())
+
+		local setting_ipv4 = NetworkManager.SettingIP4Config.new()
+		--local setting_ipv6 = NetworkManager.SettingIP6Config.new()
+
+		self.debugger.writeln("\27[36;1m================SETTING ETHERNET IP================")
+		self.debugger.writeln(string.format("IP ADDR -> %s", self.ip))
+		self.debugger.writeln("===================================================\27[0m")
+
+		--setting_ipv6[NetworkManager.SETTING_IP_CONFIG_METHOD] = NetworkManager.SETTING_IP6_CONFIG_METHOD_DISABLED
+
+		if self.ip then
+			setting_ipv4[NetworkManager.SETTING_IP_CONFIG_METHOD] = NetworkManager.SETTING_IP4_CONFIG_METHOD_MANUAL
+
+			-- 2 IS AF_INET WHT IS GETTING AF_INET SO ANNOYING
+			local ipv4 = NetworkManager.IPAddress.new(2, self.ip, 8)
+			setting_ipv4:add_address(ipv4)
+		end
+
+		self._tmp_conn:add_setting(setting_ipv4)
+
+		--self._tmp_conn:add_setting(setting_ipv6)
+
 		return self._tmp_conn
 	end
 
@@ -91,15 +115,17 @@ function Netmon:_create_conn(name, devtype, network_name, password)
 
 	if devtype == "hotspot" then
 		-- setting_wireless[NetworkManager.SETTING_WIRELESS_MODE_ADHOC] = GLib.Bytes("adhoc")
-		
+
 		local setting_ipv4 = NetworkManager.SettingIP4Config.new()
 		setting_ipv4[NetworkManager.SETTING_IP_CONFIG_METHOD] = NetworkManager.SETTING_IP4_CONFIG_METHOD_SHARED
 
 		setting_wireless_security:add_proto("rsn")
 		setting_wireless_security:add_group("ccmp")
 		setting_wireless_security:add_pairwise("ccmp")
+
 		-- setting_wireless_security[NetworkManager.SETTING_WIRELESS_SECURITY_GROUP] = "CCMP"
 		-- setting_wireless_security[NetworkManager.SETTING_WIRELESS_SECURITY_PAIRWISE] = "CCMP"
+		-- setting_ipv4:add_dns_search("127.0.0.1")
 
 		setting_wireless[NetworkManager.SETTING_WIRELESS_MODE] = "ap"
 
@@ -167,7 +193,7 @@ function Netmon:create(device, log, devtype, config_file)
 	netmon.devtype = devtype or "wifi" -- defaults to wifi
 
 	-- netmon.config_path = config_file or directories.MyTempo .. "main/config_shell.txt"
-	netmon.config_path = config_file or devtype .. ".conf"
+	netmon.config_path = config_file or directories.Home .. "MyTempo/conf/" .. devtype .. ".conf"
 	if config_file == "no_config" then netmon.config_path = nil end
 
 	self.generic_conn_callback = (function(...) netmon:_generic_conn_callback(...) end)
@@ -195,7 +221,7 @@ function Netmon:read_config()
 
 	local config = f:read("*a")
 	local config_iterator = config:gmatch("[a-zA-Z0-9]:\"([^\n]*)\"")
-
+	
 	return Itool.iter_unpack(config_iterator)
 end
 
@@ -209,13 +235,13 @@ function Netmon:activateconn()
 	self.connecting = true
 
 	self.nmcli:activate_connection_async(
-								conn,
-								self.device,
-								nil,
-								nil,
-								self.generic_conn_callback,
-								nil
-							)
+	conn,
+	self.device,
+	nil,
+	nil,
+	self.generic_conn_callback,
+	nil
+	)
 end
 
 --@bool
@@ -233,20 +259,26 @@ function Netmon:connect_once()
 	self.connecting = true
 
 	self.conn = self:_create_conn(
-								self.network_name,
-								self.devtype,
-								self.network_name,
-								self.password
-							)
+	self.network_name,
+	self.devtype,
+	self.network_name,
+	self.password
+	)
+
+	self.debugger.writeln(string.format("\27[36;1m"))
+	self.debugger.pp(self.conn)
+	self.debugger.pp(self.password)
+	self.debugger.pp(self.network_name)
+	self.debugger.writeln(string.format("%s\27[0m", self.ip))
 
 	self.nmcli:add_and_activate_connection_async(
-								self.conn,
-								self.device,
-								nil,
-								nil,
-								self.generic_conn_callback,
-								nil
-							)
+	self.conn,
+	self.device,
+	nil,
+	nil,
+	self.generic_conn_callback,
+	nil
+	)
 
 	-- self.conn_wait_loop:run()
 end
@@ -254,11 +286,32 @@ end
 function Netmon:LOG(fn, fmt, ...)
 	if self.logger then
 		self.logger:write(
-			string.format("IN %s| " .. fmt or "", fn:upper(), ...)
+		string.format("IN %s| " .. fmt or "", fn:upper(), ...)
 		)
 	end
 end
 
+function Netmon:did_network_name_change()
+	if not self.config_path then
+		return false
+	end
+
+	local network_name, pass, ip = self:read_config()
+	if network_name ~= self.network_name or pass ~= self.password then
+		self.network_name = network_name
+		self.password = pass
+		self.ip = ip
+		self.uuid = self.gen_uuid()
+
+		return true
+	end
+
+	return false
+end
+
+CHECK_UP_CONNECT_ONCE = 1
+CHECK_UP_REACTIVATE = 2
+CHECK_UP_OK = 3
 function Netmon:check_up()
 	local dev_state = self.device:get_state()
 
@@ -266,20 +319,41 @@ function Netmon:check_up()
 	self.debugger.writeln(string.format("- DEVICE STATE: (%s)", dev_state))
 	self.debugger.writeln(string.format("- DEVICE CONFIGURATION: (Network name: %s, Password: %s)", self.network_name, self.password))
 
-	self:LOG("checking up " .. self.device_name, "Dev state: %s", dev_state)
-	
-	if dev_state ~= "ACTIVATED" and dev_state ~= "IP_CONFIG" then --XXX: the IP_CONFIG thing is a workaround, testing
+	self:LOG(string.format("checking up %s", self.device_name), "Dev state: %s", dev_state)
+
+	self.debugger.writeln(string.format("network: %s", self.network_name or "127"))
+	if self:did_network_name_change() then
+		local active = self.device:get_active_connection()
+		if active then
+			active:get_connection():delete()
+		end
+
+		self.debugger.writeln(string.format("network: %s", self.network_name or "127"))
+		self.conn = nil
+
+		return CHECK_UP_CONNECT_ONCE
+	end
+
+	if dev_state ~= "ACTIVATED" and dev_state ~= "IP_CONFIG" and dev_state ~= "CONFIG" then --XXX: the IP_CONFIG thing is a workaround, testing
 		self.debugger.writeln("- DEVICE NOT ACTIVATED, RECONNECTING ...")
 		self.debugger.writeln("===========================================\27[0m\n")
 
-		return false
+		if self.conn then
+			return CHECK_UP_REACTIVATE
+		end
+
+		return CHECK_UP_CONNECT_ONCE
 	end
 
 	local conn = self.device:get_active_connection()
 	if not conn then -- XXX: what?
-		return true
+		if not self.conn then
+			return CHECK_UP_CONNECT_ONCE
+		end
+
+		return CHECK_UP_REACTIVATE
 	end
-	
+
 	self.debugger.writeln(string.format("- ACTIVE CONNECTION: (%s)", conn))
 
 	local conn_uuid = conn:get_uuid()
@@ -287,8 +361,8 @@ function Netmon:check_up()
 
 	if conn_uuid ~= self.uuid then
 		self:LOG(
-			string.format("checking_up %s", self.device_name),
-			"Device connected to another network, reconnecting..."
+		string.format("checking_up %s", self.device_name),
+		"Device connected to another network, reconnecting..."
 		)
 
 		self.debugger.writeln("- UNKNOWN NETWORK ... DELETING")
@@ -296,32 +370,33 @@ function Netmon:check_up()
 
 		self.debugger.writeln("===========================================\27[0m\n")
 
-		return false
+		return CHECK_UP_CONNECT_ONCE
 	end
 
 	self.debugger.writeln("===========================================\27[0m\n")
 
-	return true
+	return CHECK_UP_OK
 end
 
 --@void
 function Netmon:create_monitor()
 	self.mon = coroutine.create(
-		--@void __coroutine__
-		function()
-			while true do
-				-- check up and hold
-				if not self:check_up() then
-					if not self.conn then
-						self:connect_once()
-					else
-						self:activateconn()
-					end
-				end
+	--@void __coroutine__
+	function()
+		while true do
+			local result = self:check_up()
 
-				coroutine.yield(true) -- return true to make glib run this again
+			if result == CHECK_UP_CONNECT_ONCE then
+				self:connect_once()
 			end
+
+			if result == CHECK_UP_REACTIVATE then
+				self:activateconn()
+			end
+
+			coroutine.yield(true) -- return true to make glib run this again
 		end
+	end
 	)
 end
 
@@ -335,22 +410,22 @@ end
 
 --[[@void
 function Netmon.check_all()
-	for _, mon_routine in ipairs(Netmon.monitored) do
-		coroutine.resume(mon_routine)
-	end
+for _, mon_routine in ipairs(Netmon.monitored) do
+coroutine.resume(mon_routine)
+end
 end
 ]]--
 
 --@void ((__INF_LOOP__))
 function Netmon.run()
 	--[[while true do
-		if Netmon.logger then
-			Netmon.logger:write("NETMON.RUN| Checking all networks")
-		end
+	if Netmon.logger then
+	Netmon.logger:write("NETMON.RUN| Checking all networks")
+	end
 
-		Netmon.check_all()
+	Netmon.check_all()
 
-		sleep(4)
+	sleep(4)
 	end
 	]]--
 	--GLib.idle_add(
