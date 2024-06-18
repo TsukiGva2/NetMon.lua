@@ -101,7 +101,7 @@ function Netmon:_wifi_scan()
 	table.sort(networks, function(net_a, net_b)
 		local _, _, bw1 = table.unpack(net_a)
 		local _, _, bw2 = table.unpack(net_b)
-		return bw1 < bw2
+		return bw1 > bw2 -- reversed
 	end)
 
 	return networks
