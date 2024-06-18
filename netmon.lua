@@ -95,7 +95,7 @@ function Netmon:_wifi_scan()
 			bandwidth = ap:get_bandwidth()
 		end
 
-		table.insert(table.pack(mac, ssid, bandwidth))
+		table.insert(networks, table.pack(mac, ssid, bandwidth))
 	end
 
 	table.sort(networks, function(net_a, net_b)
@@ -168,10 +168,21 @@ function Netmon:_create_conn(name, devtype, network_name, password)
 			self.debugger.writeln("\27[32;1mDevice capable of wifi scan, scanning...\27[0m")
 
 			local networks = self:wifi_scan()
-			for _, access_point in networks do
+			for _, access_point in ipairs(networks) do
 				mac, ssid, band = table.unpack(access_point)
-				if ssid == network_name then
-					setting_wireless[NetworkManager.SETTING_WIRELESS_MAC_ADDRESS] = mac
+
+				local ssid_rtrim = ssid:match("(.-)%s*$")
+
+				self.debugger.writeln(string.format("found: %s %s %d", mac, ssid_rtrim, band))
+
+				-- daily reminder that some ssids have a trailing space.
+				-- have a good day :)
+				if ssid_rtrim == network_name then
+					-- correcting possible trim thing mismatch
+					setting_wireless[NetworkManager.SETTING_WIRELESS_SSID] = GLib.Bytes(ssid)
+					setting_wireless[NetworkManager.SETTING_WIRELESS_BSSID] = mac
+
+					self.debugger.writeln(string.format("Found match for %s, connecting to %s", network_name, mac))
 					break
 				end
 			end
