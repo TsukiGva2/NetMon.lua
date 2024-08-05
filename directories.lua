@@ -1,10 +1,8 @@
 local home = os.getenv("HOME")
 
 Dirs = {
-    Home = home .. "/",
-    MyTempo = home .. "/MyTempo/",
-    MyTempo_py_dir = home .. "/MyTempo/src/mytempo-api-linux/"
+	Home = home .. "/",
+	MyTempo = home .. "/MyTempo/",
 }
 
 return Dirs
-

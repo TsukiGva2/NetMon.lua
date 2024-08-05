@@ -222,7 +222,7 @@ function Netmon:detect_devices()
 	return devices
 end
 
---@void ((__callback__))
+--@void @callback
 function Netmon:_generic_conn_callback(_, result, data)
 	local conn, err, code = self.nmcli:add_and_activate_connection_finish(result)
 
